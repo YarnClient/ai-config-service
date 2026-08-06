@@ -12,15 +12,38 @@
   h3 { font-size: 16px; margin-bottom: 18px; color: #1a1a2e; }
 
   .form-group { margin-bottom: 16px; }
-  .form-group label { display: block; font-size: 13px; font-weight: 600;
+  .form-group label { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600;
                       margin-bottom: 6px; color: #555; }
-  .form-group select { width: 100%; padding: 10px 12px; font-size: 14px;
-                       border: 1px solid #d1d5db; border-radius: 8px;
-                       background: #fff; appearance: none; cursor: pointer;
-                       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23666' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
-                       background-repeat: no-repeat; background-position: right 12px center; }
-  .form-group select:focus { outline: none; border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79,70,229,.12); }
-  .form-group select:disabled { background: #f3f4f6; color: #9ca3af; cursor: not-allowed; }
+  .form-group select,
+  .form-group input[type=text] {
+    width: 100%; padding: 10px 12px; font-size: 14px;
+    border: 1px solid #d1d5db; border-radius: 8px;
+    background: #fff; color: #333;
+  }
+  .form-group select {
+    appearance: none; cursor: pointer;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23666' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 12px center;
+  }
+  .form-group select:focus,
+  .form-group input[type=text]:focus {
+    outline: none; border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79,70,229,.12);
+  }
+  .form-group select:disabled,
+  .form-group input:disabled {
+    background: #f3f4f6; color: #9ca3af; cursor: not-allowed;
+  }
+
+  /* 数据来源标签 */
+  .src-tag { font-size: 11px; font-weight: 500; padding: 2px 8px; border-radius: 4px; }
+  .src-tag.api   { background: #dbeafe; color: #1d4ed8; }
+  .src-tag.static{ background: #fef3c7; color: #b45309; }
+
+  /* 手动输入切换 */
+  .toggle-row { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+  .toggle-link { font-size: 12px; color: #4f46e5; cursor: pointer; user-select: none; }
+  .toggle-link:hover { text-decoration: underline; }
+  .manual-input { display: none; }
 
   .hint { font-size: 12px; color: #9ca3af; margin-top: 4px; }
 
@@ -41,6 +64,7 @@
 <div class="container">
   <h3>电销召回通道配置</h3>
 
+  <!-- ====== 触达通道 ====== -->
   <div class="form-group">
     <label>触达通道</label>
     <select id="channelType">
@@ -48,20 +72,47 @@
     </select>
   </div>
 
+  <!-- ====== 话术模板 ====== -->
   <div class="form-group">
-    <label>话术模板</label>
+    <label>
+      话术模板
+      <span class="src-tag api" id="sceneTagApi">API 查询</span>
+      <span class="src-tag static" id="sceneTagStatic" style="display:none">静态维护</span>
+    </label>
     <select id="scene" disabled>
       <option value="">请先选择触达通道</option>
     </select>
+    <input type="text" id="sceneManual" class="manual-input"
+           placeholder="手动输入话术模板编号..." disabled>
+    <div class="toggle-row">
+      <span id="sceneToggleLabel" style="display:none">
+        <span class="toggle-link" id="sceneToggleLink" onclick="toggleManual('scene')">切换手动输入</span>
+        <span style="font-size:12px;color:#9ca3af;">（下拉找不到时直接输入编号）</span>
+      </span>
+    </div>
   </div>
 
+  <!-- ====== 呼叫路由 ====== -->
   <div class="form-group">
-    <label>呼叫路由</label>
+    <label>
+      呼叫路由
+      <span class="src-tag api" id="routeTagApi">API 查询</span>
+      <span class="src-tag static" id="routeTagStatic" style="display:none">静态维护</span>
+    </label>
     <select id="route" disabled>
       <option value="">请先选择触达通道</option>
     </select>
+    <input type="text" id="routeManual" class="manual-input"
+           placeholder="手动输入呼叫路由编号..." disabled>
+    <div class="toggle-row">
+      <span id="routeToggleLabel" style="display:none">
+        <span class="toggle-link" id="routeToggleLink" onclick="toggleManual('route')">切换手动输入</span>
+        <span style="font-size:12px;color:#9ca3af;">（下拉找不到时直接输入编号）</span>
+      </span>
+    </div>
   </div>
 
+  <!-- ====== 详情卡片 ====== -->
   <div id="card" class="card">
     <div class="title" id="cardTitle"></div>
     <div id="cardDesc"></div>
@@ -74,60 +125,106 @@
 </div>
 
 <script>
-  const BASE = location.origin;
+  var BASE = location.origin;
 
   // ---- 通信模式检测 ----
-  // URL 模式：神策通过 URL 传入 type/value/mode
-  // Event 模式：神策通过 postMessage init 事件传入
-  var params = new URLSearchParams(location.search);
-  var urlType  = params.get('type')  || '';
-  var urlValue = params.get('value') || '';
-  var urlMode  = params.get('mode')  || '';
-  var isUrlMode = !!urlType;          // URL 带了 type → URL 模式
+  var params    = new URLSearchParams(location.search);
+  var urlType   = params.get('type')  || '';
+  var urlValue  = params.get('value') || '';
+  var urlMode   = params.get('mode')  || '';
+  var isUrlMode = !!urlType;
 
-  // 运行时状态
-  var paramType = urlType;            // 当前参数名（URL 模式来自 query，Event 模式来自 init 消息）
-  var viewMode = (urlMode === 'view');
+  var paramType = urlType;
+  var viewMode  = (urlMode === 'view');
+
+  // 手动输入模式状态 { 'scene': false, 'route': false }
+  var manualMode = { scene: false, route: false };
+
+  // 当前通道数据来源标记: manual → AICC, ai → AI Agent
+  var currentChannel = '';
+
+  // ---- 数据来源配置 ----
+  // AICC（人工）: 话术=无API(静态), 路由=有API
+  // AI Agent（AI）: 话术=有API, 路由=有API
+  function getSourceConfig(channel) {
+    if (channel === 'manual') return { sceneApi: false, routeApi: true  };
+    if (channel === 'ai')     return { sceneApi: true,  routeApi: true  };
+    return { sceneApi: false, routeApi: false };
+  }
+
+  function updateSourceTags(channel) {
+    var cfg = getSourceConfig(channel);
+    // scene
+    document.getElementById('sceneTagApi').style.display    = cfg.sceneApi ? '' : 'none';
+    document.getElementById('sceneTagStatic').style.display = cfg.sceneApi ? 'none' : '';
+    // route
+    document.getElementById('routeTagApi').style.display    = cfg.routeApi ? '' : 'none';
+    document.getElementById('routeTagStatic').style.display = cfg.routeApi ? 'none' : '';
+  }
 
   // ---- Event 模式：监听 parent 消息 ----
   window.addEventListener('message', function(evt) {
-    // 安全检查：只处理来自父窗口的消息
     if (evt.source !== window.parent) return;
     var data = evt.data;
     if (!data) return;
-
     console.log('[selector] ← parent message:', data);
-
-    // Event 模式：收到 init → 获取初始值和参数名
     if (data.action === 'init') {
       paramType = data.type || urlType || '';
       viewMode  = (data.mode === 'view');
-      if (data.value) {
-        restoreValue(data.value);
-      }
+      if (data.value) restoreValue(data.value);
       if (viewMode) setReadonly(true);
     }
   });
 
-  // 向 parent 发送 ready（Event 模式握手，URL 模式下也无害）
   window.parent.postMessage({ action: 'ready' }, '*');
   console.log('[selector] → parent: ready');
 
-  // ---- 回显已选值 ----
   function restoreValue(val) {
     console.log('[selector] restoreValue:', val);
-    // 尝试回显 — 简单值直接设置，复杂情况依赖 channelType 联动
-    // 先设 channelType，再异步加载 scenes/routes 后回显对应值
   }
 
   function setReadonly(readonly) {
     document.getElementById('channelType').disabled = readonly;
     document.getElementById('scene').disabled = readonly;
+    document.getElementById('sceneManual').disabled = readonly;
     document.getElementById('route').disabled = readonly;
+    document.getElementById('routeManual').disabled = readonly;
     document.getElementById('btnConfirm').style.display = readonly ? 'none' : '';
   }
 
-  // ---- 初始化下拉选项 ----
+  // ---- 手动输入切换 ----
+  function toggleManual(field) {
+    var select  = document.getElementById(field);
+    var input   = document.getElementById(field + 'Manual');
+    var link    = document.getElementById(field + 'ToggleLink');
+
+    manualMode[field] = !manualMode[field];
+
+    if (manualMode[field]) {
+      // 切换到手动输入：隐藏 select，显示 input
+      select.style.display = 'none';
+      input.style.display  = '';
+      input.disabled = false;
+      link.textContent = '切换下拉选择';
+      document.getElementById('card').classList.remove('show');
+    } else {
+      // 切换回下拉：显示 select，隐藏 input
+      select.style.display = '';
+      input.style.display  = 'none';
+      input.disabled = true;
+      link.textContent = '切换手动输入';
+    }
+  }
+
+  // ---- 获取字段当前值（自动判断下拉/手动模式） ----
+  function getFieldValue(field) {
+    if (manualMode[field]) {
+      return document.getElementById(field + 'Manual').value.trim();
+    }
+    return document.getElementById(field).value;
+  }
+
+  // ---- 初始化 channelType 下拉 ----
   async function loadChannelTypes() {
     try {
       var res = await fetch(BASE + '/config/channelTypes');
@@ -147,20 +244,34 @@
   // ---- 级联：触达通道变更 → 加载对应话术和路由 ----
   async function onChannelChange() {
     var channel = document.getElementById('channelType').value;
-    var sceneSel = document.getElementById('scene');
-    var routeSel = document.getElementById('route');
+    currentChannel = channel;
+
+    // 切换手动输入模式自动回到下拉
+    if (manualMode.scene) toggleManual('scene');
+    if (manualMode.route) toggleManual('route');
+
+    var sceneSel  = document.getElementById('scene');
+    var routeSel  = document.getElementById('route');
+    var toggleRowScene = document.getElementById('sceneToggleLabel');
+    var toggleRowRoute = document.getElementById('routeToggleLabel');
 
     sceneSel.innerHTML = '<option value="">加载中...</option>';
     routeSel.innerHTML = '<option value="">加载中...</option>';
     sceneSel.disabled = true;
     routeSel.disabled = true;
+    toggleRowScene.style.display = 'none';
+    toggleRowRoute.style.display = 'none';
     document.getElementById('card').classList.remove('show');
 
     if (!channel) {
       sceneSel.innerHTML = '<option value="">请先选择触达通道</option>';
       routeSel.innerHTML = '<option value="">请先选择触达通道</option>';
+      updateSourceTags('');
       return;
     }
+
+    // 显示数据来源标签
+    updateSourceTags(channel);
 
     try {
       var results = await Promise.all([
@@ -170,25 +281,32 @@
       var scenes = await results[0].json();
       var routes = await results[1].json();
 
+      // 填充话术下拉
       sceneSel.innerHTML = '<option value="">请选择话术模板...</option>';
       scenes.forEach(function(item) {
         var opt = document.createElement('option');
         opt.value = item.value;
         opt.textContent = item.name;
-        opt.dataset.desc = (item.detail && item.detail.description) || '';
+        if (item.detail && item.detail.description) opt.dataset.desc = item.detail.description;
         sceneSel.appendChild(opt);
       });
       sceneSel.disabled = false;
 
+      // 填充路由下拉
       routeSel.innerHTML = '<option value="">请选择呼叫路由...</option>';
       routes.forEach(function(item) {
         var opt = document.createElement('option');
         opt.value = item.value;
         opt.textContent = item.name;
-        opt.dataset.desc = (item.detail && item.detail.description) || '';
+        if (item.detail && item.detail.description) opt.dataset.desc = item.detail.description;
         routeSel.appendChild(opt);
       });
       routeSel.disabled = false;
+
+      // 显示手动输入切换入口
+      toggleRowScene.style.display = '';
+      toggleRowRoute.style.display = '';
+
     } catch (e) {
       console.error('加载参数失败', e);
       sceneSel.innerHTML = '<option value="">加载失败</option>';
@@ -196,9 +314,11 @@
     }
   }
 
-  // ---- 话术/路由选中时展示详情卡片 ----
-  function showDetail(type) {
-    var sel = document.getElementById(type);
+  // ---- 选中项详情卡片 ----
+  function showDetail(field) {
+    // 手动模式下不展示详情卡片
+    if (manualMode[field]) { document.getElementById('card').classList.remove('show'); return; }
+    var sel = document.getElementById(field);
     var opt = sel.selectedOptions[0];
     var card = document.getElementById('card');
     if (opt && opt.dataset.desc) {
@@ -210,13 +330,12 @@
     }
   }
 
-  // ---- 确定：根据模式选择 postMessage 格式 ----
+  // ---- 确定 ----
   function doConfirm() {
     var channel = document.getElementById('channelType').value;
-    var scene   = document.getElementById('scene').value;
-    var route   = document.getElementById('route').value;
+    var scene   = getFieldValue('scene');
+    var route   = getFieldValue('route');
 
-    // 根据参数类型决定返回值
     var returnValue;
     switch (paramType) {
       case 'channelType': returnValue = channel; break;
@@ -226,16 +345,13 @@
     }
 
     if (isUrlMode) {
-      // URL 模式：{ type, value }
       console.log('[selector] → parent (URL mode):', { type: paramType, value: returnValue });
       window.parent.postMessage({ type: paramType, value: returnValue }, '*');
     } else {
-      // Event 模式：{ action: 'value', value }
       console.log('[selector] → parent (Event mode):', { action: 'value', value: returnValue });
       window.parent.postMessage({ action: 'value', value: returnValue }, '*');
     }
 
-    // 视觉反馈
     var btn = document.getElementById('btnConfirm');
     btn.textContent = '已选择';
     btn.style.background = '#10b981';
@@ -246,6 +362,14 @@
     console.log('[selector] → parent: cancel');
     window.parent.postMessage({ action: 'cancel' }, '*');
   }
+
+  // ---- 手动输入框值变化时清理卡片 ----
+  document.getElementById('sceneManual').addEventListener('input', function() {
+    document.getElementById('card').classList.remove('show');
+  });
+  document.getElementById('routeManual').addEventListener('input', function() {
+    document.getElementById('card').classList.remove('show');
+  });
 
   // ---- 绑定事件 ----
   document.getElementById('btnConfirm').addEventListener('click', doConfirm);
