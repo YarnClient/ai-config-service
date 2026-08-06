@@ -68,8 +68,8 @@
   </div>
 
   <div class="btn-row">
-    <button class="btn btn-secondary" onclick="cancel()">取消</button>
-    <button class="btn btn-primary" onclick="confirm()">确定</button>
+    <button class="btn btn-secondary" id="btnCancel">取消</button>
+    <button class="btn btn-primary" id="btnConfirm">确定</button>
   </div>
 </div>
 
@@ -177,7 +177,7 @@
   }
 
   // ---- 确定：postMessage 回神策 ----
-  function confirm() {
+  function doConfirm() {
     const channel = document.getElementById('channelType').value;
     const scene = document.getElementById('scene').value;
     const route = document.getElementById('route').value;
@@ -191,14 +191,24 @@
       default:           returnValue = JSON.stringify({channelType: channel, sceneId: scene, routeId: route});
     }
 
+    console.log('[selector] postMessage confirm:', { type: paramType, value: returnValue });
     window.parent.postMessage({ type: paramType, value: returnValue }, '*');
+
+    // 反馈：按钮短暂变色
+    var btn = document.getElementById('btnConfirm');
+    btn.textContent = '已选择';
+    btn.style.background = '#10b981';
+    setTimeout(function() { btn.textContent = '确定'; btn.style.background = '#4f46e5'; }, 1200);
   }
 
-  function cancel() {
+  function doCancel() {
+    console.log('[selector] postMessage cancel');
     window.parent.postMessage({ type: paramType, action: 'cancel' }, '*');
   }
 
-  // 绑定事件
+  // 绑定事件（addEventListener 避免 onclick 中函数名与浏览器内置函数冲突）
+  document.getElementById('btnConfirm').addEventListener('click', doConfirm);
+  document.getElementById('btnCancel').addEventListener('click', doCancel);
   document.getElementById('channelType').addEventListener('change', onChannelChange);
   document.getElementById('scene').addEventListener('change', function() { showDetail('scene'); });
   document.getElementById('route').addEventListener('change', function() { showDetail('route'); });
