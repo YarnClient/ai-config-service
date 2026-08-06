@@ -1,43 +1,40 @@
 package com.example.config.model;
 
-import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.fasterxml.jackson.annotation.JsonProperty;
+import lombok.AllArgsConstructor;
 import lombok.Data;
-
-import java.util.LinkedHashMap;
-import java.util.Map;
+import lombok.NoArgsConstructor;
 
 /**
  * AI Agent / 话术模板 模型。
- * 字段名遵循神策动态下拉参数规范：
+ * 字段名直接对应神策动态下拉参数规范：
  * name  = 下拉菜单显示名称
  * value = 选项值
  * detail.description = 信息卡片描述
  */
 @Data
+@NoArgsConstructor
 public class Agent {
 
-    /** 模板/Agent ID，序列化为 "value" */
-    @JsonProperty("value")
-    private String id;
+    /** 选项值（模板/Agent ID，传给下游 API） */
+    private String value;
 
-    /** 名称，序列化为 "name" */
+    /** 下拉菜单显示名称 */
     private String name;
 
-    /** 描述，嵌套在 detail.description 中序列化 */
-    @JsonIgnore
-    private String description;
+    /** 信息卡片 */
+    private Detail detail;
 
-    /**
-     * 按神策规范序列化为 detail 对象，用于展示信息卡片
-     */
-    @JsonProperty("detail")
-    public Map<String, String> getDetail() {
-        if (description == null || description.isEmpty()) {
-            return null;
-        }
-        Map<String, String> detail = new LinkedHashMap<>();
-        detail.put("description", description);
-        return detail;
+    /** 便捷构造 */
+    public Agent(String value, String name, String description) {
+        this.value = value;
+        this.name = name;
+        this.detail = new Detail(description);
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class Detail {
+        private String description;
     }
 }

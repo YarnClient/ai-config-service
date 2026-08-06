@@ -20,22 +20,11 @@ public class AiAgentService {
      * 返回可用的 AI Agent 话术列表
      */
     public List<Agent> queryAgents() {
-        Agent a1 = new Agent();
-        a1.setId("agent_001");
-        a1.setName("GP召回-智能客服Agent");
-        a1.setDescription("处理GP电销召回场景，流失用户召回话术");
-
-        Agent a2 = new Agent();
-        a2.setId("agent_002");
-        a2.setName("GP营销机器人");
-        a2.setDescription("GP营销外呼场景，高价值用户营销话术");
-
-        Agent a3 = new Agent();
-        a3.setId("agent_003");
-        a3.setName("GP售后助手");
-        a3.setDescription("GP售后问题处理，用户满意度回访话术");
-
-        return Arrays.asList(a1, a2, a3);
+        return Arrays.asList(
+                new Agent("agent_001", "GP召回-智能客服Agent", "处理GP电销召回场景，流失用户召回话术"),
+                new Agent("agent_002", "GP营销机器人", "GP营销外呼场景，高价值用户营销话术"),
+                new Agent("agent_003", "GP售后助手", "GP售后问题处理，用户满意度回访话术")
+        );
     }
 
     /**

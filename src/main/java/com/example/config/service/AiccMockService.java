@@ -19,22 +19,11 @@ public class AiccMockService {
      * 模拟 AICC 话术模板列表
      */
     public List<Agent> queryScenes() {
-        Agent s1 = new Agent();
-        s1.setId("scene_gp_recall_001");
-        s1.setName("GP召回-流失召回话术");
-        s1.setDescription("针对流失用户的人工电销召回话术模板");
-
-        Agent s2 = new Agent();
-        s2.setId("scene_gp_recall_002");
-        s2.setName("GP召回-高价值召回话术");
-        s2.setDescription("针对高价值用户的人工电销召回话术模板");
-
-        Agent s3 = new Agent();
-        s3.setId("scene_gp_recall_003");
-        s3.setName("GP召回-活动通知话术");
-        s3.setDescription("GP活动通知场景的人工电销话术模板");
-
-        return Arrays.asList(s1, s2, s3);
+        return Arrays.asList(
+                new Agent("scene_gp_recall_001", "GP召回-流失召回话术", "针对流失用户的人工电销召回话术模板"),
+                new Agent("scene_gp_recall_002", "GP召回-高价值召回话术", "针对高价值用户的人工电销召回话术模板"),
+                new Agent("scene_gp_recall_003", "GP召回-活动通知话术", "GP活动通知场景的人工电销话术模板")
+        );
     }
 
     /**
