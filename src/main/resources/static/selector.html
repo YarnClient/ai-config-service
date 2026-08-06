@@ -139,13 +139,16 @@
 
   // ---- URL 参数 ----
   var params    = new URLSearchParams(location.search);
-  var urlType   = params.get('type')  || '';
   var urlValue  = params.get('value') || '';
   var urlMode   = params.get('mode')  || '';
-  var isUrlMode = !!urlType;
 
-  // 运行时状态
-  var paramType     = urlType;
+  // 关键：神策可能在用户 URL 的 type=xxx 之后再注入 type=真实ID
+  // 需要取 LAST type 作为 postMessage 回传标识，key 作为参数名
+  var allTypes  = params.getAll('type');
+  var postType  = allTypes.length ? allTypes[allTypes.length - 1] : '';  // 最后一个 type → postMessage 用
+  var paramKey  = params.get('key')  || '';   // 神策注入的参数名（channelType/sceneId/routeId）
+  var paramType = paramKey || postType;        // 优先用 key，兜底用 type
+  var isUrlMode = !!postType;
   var viewMode      = (urlMode === 'view');
   var hasInit       = false;   // 是否收到过 Event 模式 init
   var confirmed     = false;   // 是否已确认（防止重复发送）
@@ -168,8 +171,10 @@
 
   dlog('INIT', 'origin=' + location.origin);
   dlog('INIT', 'FULL URL: ' + location.href);
-  dlog('INIT', 'urlType=' + (urlType || '(empty)') + ' urlValue=' + (urlValue || '(empty)') + ' urlMode=' + (urlMode || '(empty)'));
-  dlog('INIT', 'isUrlMode=' + isUrlMode + ' | parent=' + (window.parent === window ? 'self' : 'ok') + ' top=' + (window.top === window ? 'self' : 'ok'));
+  dlog('INIT', 'allTypes=' + JSON.stringify(allTypes) + ' postType=' + (postType || '(empty)'));
+  dlog('INIT', 'paramKey=' + (paramKey || '(empty)') + ' paramType=' + (paramType || '(empty)'));
+  dlog('INIT', 'urlValue=' + (urlValue || '(empty)') + ' urlMode=' + (urlMode || '(empty)'));
+  dlog('INIT', 'isUrlMode=' + isUrlMode + ' | window.parent=' + (window.parent === window ? 'self' : 'ok'));
 
   // ---- 数据来源配置 ----
   function getSourceConfig(channel) {
@@ -196,9 +201,10 @@
 
     if (data.action === 'init') {
       hasInit = true;
-      paramType = data.type || urlType || '';
+      postType  = data.type || postType || '';
+      paramType = data.type || paramType || '';
       viewMode  = (data.mode === 'view');
-      dlog('INIT', 'Event mode init: type=' + paramType + ' mode=' + (data.mode||'') + ' value=' + (data.value||''), 'green');
+      dlog('INIT', 'Event init: postType=' + postType + ' paramType=' + paramType + ' mode=' + (data.mode||''), 'green');
       if (data.value) restoreValue(data.value);
       if (viewMode) setReadonly(true);
     }
@@ -369,11 +375,11 @@
       default:            returnValue = JSON.stringify({channelType:channel, sceneId:scene, routeId:route});
     }
 
-    // URL 模式：只发 { type, value }（不加 action）
-    // Event 模式：发 { action:'value', value }
+    // URL 模式：{ type: 神策注入的ID, value }
+    // Event 模式：{ action:'value', value }
     var msg;
     if (isUrlMode) {
-      msg = { type: paramType, value: returnValue };
+      msg = { type: postType, value: returnValue };
     } else {
       msg = { action: 'value', value: returnValue };
     }
@@ -400,7 +406,7 @@
   function doCancel() {
     dlog('→PARENT', 'cancel');
     if (isUrlMode) {
-      window.parent.postMessage({ type: paramType, value: '' }, '*');
+      window.parent.postMessage({ type: postType, value: '' }, '*');
     } else {
       window.parent.postMessage({ action: 'cancel' }, '*');
     }
