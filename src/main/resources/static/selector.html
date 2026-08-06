@@ -166,8 +166,10 @@
     panel.scrollTop = panel.scrollHeight;
   }
 
-  dlog('INIT', 'page loaded, origin=' + location.origin);
-  dlog('INIT', 'urlType=' + (urlType || '(empty)') + ' isUrlMode=' + isUrlMode);
+  dlog('INIT', 'origin=' + location.origin);
+  dlog('INIT', 'FULL URL: ' + location.href);
+  dlog('INIT', 'urlType=' + (urlType || '(empty)') + ' urlValue=' + (urlValue || '(empty)') + ' urlMode=' + (urlMode || '(empty)'));
+  dlog('INIT', 'isUrlMode=' + isUrlMode + ' | parent=' + (window.parent === window ? 'self' : 'ok') + ' top=' + (window.top === window ? 'self' : 'ok'));
 
   // ---- 数据来源配置 ----
   function getSourceConfig(channel) {
@@ -367,31 +369,41 @@
       default:            returnValue = JSON.stringify({channelType:channel, sceneId:scene, routeId:route});
     }
 
-    // 同时发送 URL 模式和 Event 模式的字段，神策各取所需
-    var msg = {
-      type:   paramType,
-      value:  returnValue,
-      action: 'value'
-    };
+    // URL 模式：只发 { type, value }（不加 action）
+    // Event 模式：发 { action:'value', value }
+    var msg;
+    if (isUrlMode) {
+      msg = { type: paramType, value: returnValue };
+    } else {
+      msg = { action: 'value', value: returnValue };
+    }
+
     dlog('→PARENT', JSON.stringify(msg), 'green');
+    dlog('MODE', isUrlMode ? 'URL mode' : 'Event mode');
 
-    // 多次发送以确保送达（有些框架的 listener 可能注册较晚）
+    // 发送到 parent 和 top（神策 listener 可能在任意层）
     window.parent.postMessage(msg, '*');
-    setTimeout(function() { window.parent.postMessage(msg, '*'); }, 100);
-    setTimeout(function() { window.parent.postMessage(msg, '*'); }, 300);
+    try { if (window.top !== window.parent) window.top.postMessage(msg, '*'); } catch(e) {}
+    setTimeout(function() {
+      window.parent.postMessage(msg, '*');
+      try { if (window.top !== window.parent) window.top.postMessage(msg, '*'); } catch(e) {}
+    }, 150);
 
-    // 按钮保持"已选择"状态，不恢复
     var btn = document.getElementById('btnConfirm');
-    btn.textContent = '已选择';
+    btn.textContent = '已发送';
     btn.style.background = '#10b981';
     btn.disabled = true;
 
-    dlog('DONE', 'msg sent ×3, waiting for parent to close...');
+    dlog('DONE', 'value=' + returnValue + ' — waiting for parent to close iframe...');
   }
 
   function doCancel() {
     dlog('→PARENT', 'cancel');
-    window.parent.postMessage({ action: 'cancel' }, '*');
+    if (isUrlMode) {
+      window.parent.postMessage({ type: paramType, value: '' }, '*');
+    } else {
+      window.parent.postMessage({ action: 'cancel' }, '*');
+    }
   }
 
   // ---- 手动输入框清理卡片 ----
