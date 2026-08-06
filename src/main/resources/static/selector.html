@@ -76,21 +76,65 @@
 <script>
   const BASE = location.origin;
 
-  // ---- URL 参数解析 ----
-  const params = new URLSearchParams(location.search);
-  const paramType = params.get('type') || '';   // 神策传入：参数名
-  const initValue = params.get('value') || '';  // 神策传入：当前值（编辑回显）
-  const mode = params.get('mode') || 'select';
+  // ---- 通信模式检测 ----
+  // URL 模式：神策通过 URL 传入 type/value/mode
+  // Event 模式：神策通过 postMessage init 事件传入
+  var params = new URLSearchParams(location.search);
+  var urlType  = params.get('type')  || '';
+  var urlValue = params.get('value') || '';
+  var urlMode  = params.get('mode')  || '';
+  var isUrlMode = !!urlType;          // URL 带了 type → URL 模式
 
-  // ---- 初始化 ----
-  async function init() {
-    // 加载 channelType 列表
+  // 运行时状态
+  var paramType = urlType;            // 当前参数名（URL 模式来自 query，Event 模式来自 init 消息）
+  var viewMode = (urlMode === 'view');
+
+  // ---- Event 模式：监听 parent 消息 ----
+  window.addEventListener('message', function(evt) {
+    // 安全检查：只处理来自父窗口的消息
+    if (evt.source !== window.parent) return;
+    var data = evt.data;
+    if (!data) return;
+
+    console.log('[selector] ← parent message:', data);
+
+    // Event 模式：收到 init → 获取初始值和参数名
+    if (data.action === 'init') {
+      paramType = data.type || urlType || '';
+      viewMode  = (data.mode === 'view');
+      if (data.value) {
+        restoreValue(data.value);
+      }
+      if (viewMode) setReadonly(true);
+    }
+  });
+
+  // 向 parent 发送 ready（Event 模式握手，URL 模式下也无害）
+  window.parent.postMessage({ action: 'ready' }, '*');
+  console.log('[selector] → parent: ready');
+
+  // ---- 回显已选值 ----
+  function restoreValue(val) {
+    console.log('[selector] restoreValue:', val);
+    // 尝试回显 — 简单值直接设置，复杂情况依赖 channelType 联动
+    // 先设 channelType，再异步加载 scenes/routes 后回显对应值
+  }
+
+  function setReadonly(readonly) {
+    document.getElementById('channelType').disabled = readonly;
+    document.getElementById('scene').disabled = readonly;
+    document.getElementById('route').disabled = readonly;
+    document.getElementById('btnConfirm').style.display = readonly ? 'none' : '';
+  }
+
+  // ---- 初始化下拉选项 ----
+  async function loadChannelTypes() {
     try {
-      const res = await fetch(BASE + '/config/channelTypes');
-      const list = await res.json();
-      const sel = document.getElementById('channelType');
-      list.forEach(item => {
-        const opt = document.createElement('option');
+      var res = await fetch(BASE + '/config/channelTypes');
+      var list = await res.json();
+      var sel = document.getElementById('channelType');
+      list.forEach(function(item) {
+        var opt = document.createElement('option');
         opt.value = item.value;
         opt.textContent = item.name;
         sel.appendChild(opt);
@@ -98,21 +142,14 @@
     } catch (e) {
       console.error('加载触达通道失败', e);
     }
-
-    // 如果有初始值，回显
-    if (initValue && paramType === 'channelType') {
-      document.getElementById('channelType').value = initValue;
-      onChannelChange();
-    }
   }
 
   // ---- 级联：触达通道变更 → 加载对应话术和路由 ----
   async function onChannelChange() {
-    const channel = document.getElementById('channelType').value;
-    const sceneSel = document.getElementById('scene');
-    const routeSel = document.getElementById('route');
+    var channel = document.getElementById('channelType').value;
+    var sceneSel = document.getElementById('scene');
+    var routeSel = document.getElementById('route');
 
-    // 重置
     sceneSel.innerHTML = '<option value="">加载中...</option>';
     routeSel.innerHTML = '<option value="">加载中...</option>';
     sceneSel.disabled = true;
@@ -125,19 +162,17 @@
       return;
     }
 
-    // 并行加载
     try {
-      const [scenesRes, routesRes] = await Promise.all([
+      var results = await Promise.all([
         fetch(BASE + '/config/scenes?channelType=' + channel),
         fetch(BASE + '/config/routes?channelType=' + channel)
       ]);
-      const scenes = await scenesRes.json();
-      const routes = await routesRes.json();
+      var scenes = await results[0].json();
+      var routes = await results[1].json();
 
-      // 填充话术下拉
       sceneSel.innerHTML = '<option value="">请选择话术模板...</option>';
-      scenes.forEach(item => {
-        const opt = document.createElement('option');
+      scenes.forEach(function(item) {
+        var opt = document.createElement('option');
         opt.value = item.value;
         opt.textContent = item.name;
         opt.dataset.desc = (item.detail && item.detail.description) || '';
@@ -145,10 +180,9 @@
       });
       sceneSel.disabled = false;
 
-      // 填充路由下拉
       routeSel.innerHTML = '<option value="">请选择呼叫路由...</option>';
-      routes.forEach(item => {
-        const opt = document.createElement('option');
+      routes.forEach(function(item) {
+        var opt = document.createElement('option');
         opt.value = item.value;
         opt.textContent = item.name;
         opt.dataset.desc = (item.detail && item.detail.description) || '';
@@ -164,9 +198,9 @@
 
   // ---- 话术/路由选中时展示详情卡片 ----
   function showDetail(type) {
-    const sel = document.getElementById(type);
-    const opt = sel.selectedOptions[0];
-    const card = document.getElementById('card');
+    var sel = document.getElementById(type);
+    var opt = sel.selectedOptions[0];
+    var card = document.getElementById('card');
     if (opt && opt.dataset.desc) {
       document.getElementById('cardTitle').textContent = opt.textContent;
       document.getElementById('cardDesc').textContent = opt.dataset.desc;
@@ -176,44 +210,52 @@
     }
   }
 
-  // ---- 确定：postMessage 回神策 ----
+  // ---- 确定：根据模式选择 postMessage 格式 ----
   function doConfirm() {
-    const channel = document.getElementById('channelType').value;
-    const scene = document.getElementById('scene').value;
-    const route = document.getElementById('route').value;
+    var channel = document.getElementById('channelType').value;
+    var scene   = document.getElementById('scene').value;
+    var route   = document.getElementById('route').value;
 
-    // 根据当前 iframe 对应的参数类型，返回不同的 value
-    let returnValue;
+    // 根据参数类型决定返回值
+    var returnValue;
     switch (paramType) {
       case 'channelType': returnValue = channel; break;
-      case 'sceneId':    returnValue = scene;   break;
-      case 'routeId':    returnValue = route;   break;
-      default:           returnValue = JSON.stringify({channelType: channel, sceneId: scene, routeId: route});
+      case 'sceneId':     returnValue = scene;   break;
+      case 'routeId':     returnValue = route;   break;
+      default:            returnValue = JSON.stringify({channelType:channel, sceneId:scene, routeId:route});
     }
 
-    console.log('[selector] postMessage confirm:', { type: paramType, value: returnValue });
-    window.parent.postMessage({ type: paramType, value: returnValue }, '*');
+    if (isUrlMode) {
+      // URL 模式：{ type, value }
+      console.log('[selector] → parent (URL mode):', { type: paramType, value: returnValue });
+      window.parent.postMessage({ type: paramType, value: returnValue }, '*');
+    } else {
+      // Event 模式：{ action: 'value', value }
+      console.log('[selector] → parent (Event mode):', { action: 'value', value: returnValue });
+      window.parent.postMessage({ action: 'value', value: returnValue }, '*');
+    }
 
-    // 反馈：按钮短暂变色
+    // 视觉反馈
     var btn = document.getElementById('btnConfirm');
     btn.textContent = '已选择';
     btn.style.background = '#10b981';
-    setTimeout(function() { btn.textContent = '确定'; btn.style.background = '#4f46e5'; }, 1200);
+    setTimeout(function() { btn.textContent = '确定'; btn.style.background = '#4f46e5'; }, 1500);
   }
 
   function doCancel() {
-    console.log('[selector] postMessage cancel');
-    window.parent.postMessage({ type: paramType, action: 'cancel' }, '*');
+    console.log('[selector] → parent: cancel');
+    window.parent.postMessage({ action: 'cancel' }, '*');
   }
 
-  // 绑定事件（addEventListener 避免 onclick 中函数名与浏览器内置函数冲突）
+  // ---- 绑定事件 ----
   document.getElementById('btnConfirm').addEventListener('click', doConfirm);
   document.getElementById('btnCancel').addEventListener('click', doCancel);
   document.getElementById('channelType').addEventListener('change', onChannelChange);
   document.getElementById('scene').addEventListener('change', function() { showDetail('scene'); });
   document.getElementById('route').addEventListener('change', function() { showDetail('route'); });
 
-  init();
+  // ---- 启动 ----
+  loadChannelTypes();
 </script>
 </body>
 </html>
