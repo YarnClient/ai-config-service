@@ -17,5 +17,9 @@ target/
 .DS_Store
 Thumbs.db
 
+# SSL
+*.p12
+*.jks
+
 # Logs
 *.log

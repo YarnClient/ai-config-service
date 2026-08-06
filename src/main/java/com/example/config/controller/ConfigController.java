@@ -4,7 +4,7 @@ import com.example.config.model.Agent;
 import com.example.config.model.Option;
 import com.example.config.model.Route;
 import com.example.config.service.AiAgentService;
-import com.example.config.service.AiccMockService;
+import com.example.config.service.AiccConfigService;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Arrays;
@@ -12,27 +12,32 @@ import java.util.List;
 
 /**
  * 神策电销召回 Webhook 参数配置接口。
- * 所有接口均为 GET，返回神策动态下拉参数规范的裸数组格式：
- * [{name: "显示名", value: "选项值"}, ...]
+ *
+ * 设计原则：
+ * - 所有接口对外统一为 GET + 裸数组 [{name, value, detail?}]
+ * - 内部按 channelType 分流到不同下游数据源
+ * - 下游 API 有的走真实调用（TODO），API 没有的走静态维护
+ *
+ * 数据源一览：
+ *   manual（AICC）: 话术=静态  路由=API(routeList)
+ *   ai（AI Agent）: 话术=API(flow/list)  路由=API(route/list)
  */
 @RestController
 @RequestMapping("/config")
 public class ConfigController {
 
     private final AiAgentService aiAgentService;
-    private final AiccMockService aiccMockService;
+    private final AiccConfigService aiccConfigService;
 
     public ConfigController(AiAgentService aiAgentService,
-                            AiccMockService aiccMockService) {
+                            AiccConfigService aiccConfigService) {
         this.aiAgentService = aiAgentService;
-        this.aiccMockService = aiccMockService;
+        this.aiccConfigService = aiccConfigService;
     }
-
-    // ==================== channelType 下拉 ====================
 
     /**
      * GET /config/channelTypes
-     * 获取电销触达通道类型下拉选项
+     * 触达通道类型。静态数据，仅 manual / ai 两种。
      */
     @GetMapping("/channelTypes")
     public List<Option> channelTypes() {
@@ -42,31 +47,27 @@ public class ConfigController {
         );
     }
 
-    // ==================== 话术模板 / AI Agent 下拉 ====================
-
     /**
-     * GET /config/scenes?channelType=manual   → AICC 话术模板列表
-     * GET /config/scenes?channelType=ai       → AI Agent 列表
+     * GET /config/scenes?channelType=manual → AICC 话术（静态维护）
+     * GET /config/scenes?channelType=ai     → AI Agent（flow/list API）
      */
     @GetMapping("/scenes")
     public List<Agent> scenes(@RequestParam(defaultValue = "manual") String channelType) {
         if ("ai".equalsIgnoreCase(channelType)) {
             return aiAgentService.queryAgents();
         }
-        return aiccMockService.queryScenes();
+        return aiccConfigService.queryScenes();
     }
 
-    // ==================== 呼叫路由下拉 ====================
-
     /**
-     * GET /config/routes?channelType=manual   → AICC 呼叫路由列表
-     * GET /config/routes?channelType=ai       → AI Agent 呼叫路由列表
+     * GET /config/routes?channelType=manual → AICC 路由（routeList API）
+     * GET /config/routes?channelType=ai     → AI Agent 路由（route/list API）
      */
     @GetMapping("/routes")
     public List<Route> routes(@RequestParam(defaultValue = "manual") String channelType) {
         if ("ai".equalsIgnoreCase(channelType)) {
             return aiAgentService.queryRoutes();
         }
-        return aiccMockService.queryRoutes();
+        return aiccConfigService.queryRoutes();
     }
 }
