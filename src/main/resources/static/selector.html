@@ -9,7 +9,7 @@
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
          padding: 20px; background: #f5f6fa; color: #333; }
   .container { max-width: 480px; margin: 0 auto; }
-  h3 { font-size: 16px; margin-bottom: 18px; color: #1a1a2e; }
+  h3 { font-size: 16px; margin-bottom: 6px; color: #1a1a2e; }
 
   .form-group { margin-bottom: 16px; }
   .form-group label { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600;
@@ -34,20 +34,16 @@
     background: #f3f4f6; color: #9ca3af; cursor: not-allowed;
   }
 
-  /* 数据来源标签 */
   .src-tag { font-size: 11px; font-weight: 500; padding: 2px 8px; border-radius: 4px; }
   .src-tag.api   { background: #dbeafe; color: #1d4ed8; }
   .src-tag.static{ background: #fef3c7; color: #b45309; }
 
-  /* 手动输入切换 */
   .toggle-row { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
   .toggle-link { font-size: 12px; color: #4f46e5; cursor: pointer; user-select: none; }
   .toggle-link:hover { text-decoration: underline; }
   .manual-input { display: none; }
 
-  .hint { font-size: 12px; color: #9ca3af; margin-top: 4px; }
-
-  .btn-row { margin-top: 24px; text-align: right; }
+  .btn-row { margin-top: 20px; text-align: right; }
   .btn { padding: 8px 24px; font-size: 14px; border: none; border-radius: 8px; cursor: pointer; }
   .btn-primary { background: #4f46e5; color: #fff; }
   .btn-primary:hover { background: #4338ca; }
@@ -58,6 +54,15 @@
           font-size: 13px; color: #6b7280; border: 1px solid #e5e7eb; display: none; }
   .card.show { display: block; }
   .card .title { font-weight: 600; color: #374151; margin-bottom: 4px; }
+
+  /* debug 面板 */
+  .debug { margin-top: 16px; background: #1e1e2e; color: #cdd6f4; border-radius: 8px;
+           padding: 10px 14px; font-size: 11px; font-family: "SF Mono", Consolas, monospace;
+           max-height: 200px; overflow-y: auto; }
+  .debug .line { margin: 2px 0; word-break: break-all; }
+  .debug .label { color: #89b4fa; }
+  .debug .green { color: #a6e3a1; }
+  .debug .yellow{ color: #f9e2af; }
 </style>
 </head>
 <body>
@@ -122,30 +127,49 @@
     <button class="btn btn-secondary" id="btnCancel">取消</button>
     <button class="btn btn-primary" id="btnConfirm">确定</button>
   </div>
+
+  <!-- ====== Debug 面板 ====== -->
+  <div class="debug" id="debugPanel">
+    <div class="line"><span class="label">等待操作...</span></div>
+  </div>
 </div>
 
 <script>
   var BASE = location.origin;
 
-  // ---- 通信模式检测 ----
+  // ---- URL 参数 ----
   var params    = new URLSearchParams(location.search);
   var urlType   = params.get('type')  || '';
   var urlValue  = params.get('value') || '';
   var urlMode   = params.get('mode')  || '';
   var isUrlMode = !!urlType;
 
-  var paramType = urlType;
-  var viewMode  = (urlMode === 'view');
+  // 运行时状态
+  var paramType     = urlType;
+  var viewMode      = (urlMode === 'view');
+  var hasInit       = false;   // 是否收到过 Event 模式 init
+  var confirmed     = false;   // 是否已确认（防止重复发送）
 
-  // 手动输入模式状态 { 'scene': false, 'route': false }
   var manualMode = { scene: false, route: false };
-
-  // 当前通道数据来源标记: manual → AICC, ai → AI Agent
   var currentChannel = '';
 
+  // ---- Debug 面板 ----
+  var debugLines = [];
+  function dlog(label, msg, cls) {
+    var now = new Date().toLocaleTimeString();
+    debugLines.push({ time: now, label: label, msg: String(msg), cls: cls || '' });
+    if (debugLines.length > 20) debugLines.shift();
+    var panel = document.getElementById('debugPanel');
+    panel.innerHTML = debugLines.map(function(d) {
+      return '<div class="line">[' + d.time + '] <span class="label">' + d.label + '</span> <span class="' + d.cls + '">' + d.msg + '</span></div>';
+    }).join('');
+    panel.scrollTop = panel.scrollHeight;
+  }
+
+  dlog('INIT', 'page loaded, origin=' + location.origin);
+  dlog('INIT', 'urlType=' + (urlType || '(empty)') + ' isUrlMode=' + isUrlMode);
+
   // ---- 数据来源配置 ----
-  // AICC（人工）: 话术=无API(静态), 路由=有API
-  // AI Agent（AI）: 话术=有API, 路由=有API
   function getSourceConfig(channel) {
     if (channel === 'manual') return { sceneApi: false, routeApi: true  };
     if (channel === 'ai')     return { sceneApi: true,  routeApi: true  };
@@ -154,10 +178,8 @@
 
   function updateSourceTags(channel) {
     var cfg = getSourceConfig(channel);
-    // scene
     document.getElementById('sceneTagApi').style.display    = cfg.sceneApi ? '' : 'none';
     document.getElementById('sceneTagStatic').style.display = cfg.sceneApi ? 'none' : '';
-    // route
     document.getElementById('routeTagApi').style.display    = cfg.routeApi ? '' : 'none';
     document.getElementById('routeTagStatic').style.display = cfg.routeApi ? 'none' : '';
   }
@@ -167,20 +189,25 @@
     if (evt.source !== window.parent) return;
     var data = evt.data;
     if (!data) return;
-    console.log('[selector] ← parent message:', data);
+
+    dlog('←PARENT', JSON.stringify(data), 'yellow');
+
     if (data.action === 'init') {
+      hasInit = true;
       paramType = data.type || urlType || '';
       viewMode  = (data.mode === 'view');
+      dlog('INIT', 'Event mode init: type=' + paramType + ' mode=' + (data.mode||'') + ' value=' + (data.value||''), 'green');
       if (data.value) restoreValue(data.value);
       if (viewMode) setReadonly(true);
     }
   });
 
+  // 向 parent 发送 ready（Event 模式握手）
   window.parent.postMessage({ action: 'ready' }, '*');
-  console.log('[selector] → parent: ready');
+  dlog('→PARENT', 'sent ready', 'green');
 
   function restoreValue(val) {
-    console.log('[selector] restoreValue:', val);
+    dlog('RESTORE', 'value=' + val);
   }
 
   function setReadonly(readonly) {
@@ -201,14 +228,12 @@
     manualMode[field] = !manualMode[field];
 
     if (manualMode[field]) {
-      // 切换到手动输入：隐藏 select，显示 input
       select.style.display = 'none';
       input.style.display  = '';
       input.disabled = false;
       link.textContent = '切换下拉选择';
       document.getElementById('card').classList.remove('show');
     } else {
-      // 切换回下拉：显示 select，隐藏 input
       select.style.display = '';
       input.style.display  = 'none';
       input.disabled = true;
@@ -216,7 +241,6 @@
     }
   }
 
-  // ---- 获取字段当前值（自动判断下拉/手动模式） ----
   function getFieldValue(field) {
     if (manualMode[field]) {
       return document.getElementById(field + 'Manual').value.trim();
@@ -236,17 +260,17 @@
         opt.textContent = item.name;
         sel.appendChild(opt);
       });
+      dlog('LOAD', 'channelTypes loaded: ' + list.length + ' options', 'green');
     } catch (e) {
-      console.error('加载触达通道失败', e);
+      dlog('ERROR', 'channelTypes failed: ' + e.message);
     }
   }
 
-  // ---- 级联：触达通道变更 → 加载对应话术和路由 ----
+  // ---- 级联 ----
   async function onChannelChange() {
     var channel = document.getElementById('channelType').value;
     currentChannel = channel;
 
-    // 切换手动输入模式自动回到下拉
     if (manualMode.scene) toggleManual('scene');
     if (manualMode.route) toggleManual('route');
 
@@ -270,8 +294,8 @@
       return;
     }
 
-    // 显示数据来源标签
     updateSourceTags(channel);
+    dlog('LOAD', 'fetching scenes & routes for channel=' + channel);
 
     try {
       var results = await Promise.all([
@@ -281,7 +305,6 @@
       var scenes = await results[0].json();
       var routes = await results[1].json();
 
-      // 填充话术下拉
       sceneSel.innerHTML = '<option value="">请选择话术模板...</option>';
       scenes.forEach(function(item) {
         var opt = document.createElement('option');
@@ -292,7 +315,6 @@
       });
       sceneSel.disabled = false;
 
-      // 填充路由下拉
       routeSel.innerHTML = '<option value="">请选择呼叫路由...</option>';
       routes.forEach(function(item) {
         var opt = document.createElement('option');
@@ -303,20 +325,18 @@
       });
       routeSel.disabled = false;
 
-      // 显示手动输入切换入口
       toggleRowScene.style.display = '';
       toggleRowRoute.style.display = '';
 
+      dlog('LOAD', 'scenes=' + scenes.length + ' routes=' + routes.length, 'green');
     } catch (e) {
-      console.error('加载参数失败', e);
+      dlog('ERROR', 'fetch failed: ' + e.message);
       sceneSel.innerHTML = '<option value="">加载失败</option>';
       routeSel.innerHTML = '<option value="">加载失败</option>';
     }
   }
 
-  // ---- 选中项详情卡片 ----
   function showDetail(field) {
-    // 手动模式下不展示详情卡片
     if (manualMode[field]) { document.getElementById('card').classList.remove('show'); return; }
     var sel = document.getElementById(field);
     var opt = sel.selectedOptions[0];
@@ -332,6 +352,9 @@
 
   // ---- 确定 ----
   function doConfirm() {
+    if (confirmed) { dlog('WARN', 'already confirmed, ignoring'); return; }
+    confirmed = true;
+
     var channel = document.getElementById('channelType').value;
     var scene   = getFieldValue('scene');
     var route   = getFieldValue('route');
@@ -344,26 +367,34 @@
       default:            returnValue = JSON.stringify({channelType:channel, sceneId:scene, routeId:route});
     }
 
-    if (isUrlMode) {
-      console.log('[selector] → parent (URL mode):', { type: paramType, value: returnValue });
-      window.parent.postMessage({ type: paramType, value: returnValue }, '*');
-    } else {
-      console.log('[selector] → parent (Event mode):', { action: 'value', value: returnValue });
-      window.parent.postMessage({ action: 'value', value: returnValue }, '*');
-    }
+    // 同时发送 URL 模式和 Event 模式的字段，神策各取所需
+    var msg = {
+      type:   paramType,
+      value:  returnValue,
+      action: 'value'
+    };
+    dlog('→PARENT', JSON.stringify(msg), 'green');
 
+    // 多次发送以确保送达（有些框架的 listener 可能注册较晚）
+    window.parent.postMessage(msg, '*');
+    setTimeout(function() { window.parent.postMessage(msg, '*'); }, 100);
+    setTimeout(function() { window.parent.postMessage(msg, '*'); }, 300);
+
+    // 按钮保持"已选择"状态，不恢复
     var btn = document.getElementById('btnConfirm');
     btn.textContent = '已选择';
     btn.style.background = '#10b981';
-    setTimeout(function() { btn.textContent = '确定'; btn.style.background = '#4f46e5'; }, 1500);
+    btn.disabled = true;
+
+    dlog('DONE', 'msg sent ×3, waiting for parent to close...');
   }
 
   function doCancel() {
-    console.log('[selector] → parent: cancel');
+    dlog('→PARENT', 'cancel');
     window.parent.postMessage({ action: 'cancel' }, '*');
   }
 
-  // ---- 手动输入框值变化时清理卡片 ----
+  // ---- 手动输入框清理卡片 ----
   document.getElementById('sceneManual').addEventListener('input', function() {
     document.getElementById('card').classList.remove('show');
   });
@@ -371,7 +402,7 @@
     document.getElementById('card').classList.remove('show');
   });
 
-  // ---- 绑定事件 ----
+  // ---- 绑定 ----
   document.getElementById('btnConfirm').addEventListener('click', doConfirm);
   document.getElementById('btnCancel').addEventListener('click', doCancel);
   document.getElementById('channelType').addEventListener('change', onChannelChange);
