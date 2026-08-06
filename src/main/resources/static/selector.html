@@ -163,20 +163,27 @@
   var currentChannel = '';
 
   // ---- Debug 面板（URL 加 ?debug=1 开启） ----
-  var debugOn = params.get('debug') === '1';
-  if (debugOn) { document.getElementById('debugPanel').style.display = ''; }
+  var debugOn = (function() {
+    try { return params.get('debug') === '1'; } catch(e) { return false; }
+  })();
+  if (debugOn) {
+    try { document.getElementById('debugPanel').style.display = ''; } catch(e) {}
+  }
 
   var debugLines = [];
   function dlog(label, msg, cls) {
-    if (!debugOn) return;  // 生产环境静默跳过
-    var now = new Date().toLocaleTimeString();
-    debugLines.push({ time: now, label: label, msg: String(msg), cls: cls || '' });
-    if (debugLines.length > 20) debugLines.shift();
-    var panel = document.getElementById('debugPanel');
-    panel.innerHTML = debugLines.map(function(d) {
-      return '<div class="line">[' + d.time + '] <span class="label">' + d.label + '</span> <span class="' + d.cls + '">' + d.msg + '</span></div>';
-    }).join('');
-    panel.scrollTop = panel.scrollHeight;
+    if (!debugOn) return;
+    try {
+      var now = new Date().toLocaleTimeString();
+      debugLines.push({ time: now, label: label, msg: String(msg), cls: cls || '' });
+      if (debugLines.length > 20) debugLines.shift();
+      var panel = document.getElementById('debugPanel');
+      if (!panel) return;
+      panel.innerHTML = debugLines.map(function(d) {
+        return '<div class="line">[' + d.time + '] <span class="label">' + d.label + '</span> <span class="' + d.cls + '">' + d.msg + '</span></div>';
+      }).join('');
+      panel.scrollTop = panel.scrollHeight;
+    } catch(e) {}
   }
 
   dlog('INIT', 'origin=' + location.origin);
@@ -225,7 +232,31 @@
   dlog('→PARENT', 'sent ready', 'green');
 
   function restoreValue(val) {
-    dlog('RESTORE', 'value=' + val);
+    if (!val) return;
+    dlog('RESTORE', 'paramType=' + paramType + ' value=' + val);
+
+    if (paramType === 'channelType') {
+      document.getElementById('channelType').value = val;
+      onChannelChange();
+    } else if (paramType === 'sceneId' || paramType === 'routeId') {
+      // 从 sessionStorage 恢复通道类型
+      var savedChannel = sessionStorage.getItem('sel_channel');
+      if (savedChannel) {
+        document.getElementById('channelType').value = savedChannel;
+        loadScenesAndRoutes(savedChannel).then(function() {
+          var target = (paramType === 'sceneId') ? 'scene' : 'route';
+          var el = document.getElementById(target);
+          // 先尝试下拉匹配，匹配不到则切换到手动输入
+          if (el.querySelector('option[value="' + val + '"]')) {
+            el.value = val;
+          } else {
+            toggleManual(target);
+            document.getElementById(target + 'Manual').value = val;
+          }
+          showDetail(target);
+        });
+      }
+    }
   }
 
   function setReadonly(readonly) {
@@ -284,34 +315,12 @@
     }
   }
 
-  // ---- 级联 ----
-  async function onChannelChange() {
-    var channel = document.getElementById('channelType').value;
-    currentChannel = channel;
-
-    if (manualMode.scene) toggleManual('scene');
-    if (manualMode.route) toggleManual('route');
-
-    var sceneGroup = document.getElementById('sceneGroup');
-    var routeGroup = document.getElementById('routeGroup');
-    var sceneSel   = document.getElementById('scene');
-    var routeSel   = document.getElementById('route');
+  // ---- 加载话术和路由（复用：级联变更 / 回显恢复） ----
+  async function loadScenesAndRoutes(channel) {
+    var sceneSel = document.getElementById('scene');
+    var routeSel = document.getElementById('route');
     var toggleRowScene = document.getElementById('sceneToggleLabel');
     var toggleRowRoute = document.getElementById('routeToggleLabel');
-
-    document.getElementById('card').classList.remove('show');
-
-    if (!channel) {
-      // 未选通道 → 隐藏话术和路由
-      sceneGroup.classList.remove('show');
-      routeGroup.classList.remove('show');
-      updateSourceTags('');
-      return;
-    }
-
-    // 选中通道 → 显示话术和路由区域
-    sceneGroup.classList.add('show');
-    routeGroup.classList.add('show');
 
     sceneSel.innerHTML = '<option value="">加载中...</option>';
     routeSel.innerHTML = '<option value="">加载中...</option>';
@@ -319,6 +328,7 @@
     routeSel.disabled = true;
     toggleRowScene.style.display = 'none';
     toggleRowRoute.style.display = 'none';
+    document.getElementById('card').classList.remove('show');
 
     updateSourceTags(channel);
     dlog('LOAD', 'fetching scenes & routes for channel=' + channel);
@@ -360,6 +370,31 @@
       sceneSel.innerHTML = '<option value="">加载失败</option>';
       routeSel.innerHTML = '<option value="">加载失败</option>';
     }
+  }
+
+  // ---- 级联：通道选择变更 ----
+  async function onChannelChange() {
+    var channel = document.getElementById('channelType').value;
+    currentChannel = channel;
+
+    if (manualMode.scene) toggleManual('scene');
+    if (manualMode.route) toggleManual('route');
+
+    var sceneGroup = document.getElementById('sceneGroup');
+    var routeGroup = document.getElementById('routeGroup');
+
+    if (!channel) {
+      sceneGroup.classList.remove('show');
+      routeGroup.classList.remove('show');
+      updateSourceTags('');
+      return;
+    }
+
+    sceneGroup.classList.add('show');
+    routeGroup.classList.add('show');
+    sessionStorage.setItem('sel_channel', channel);
+
+    loadScenesAndRoutes(channel);
   }
 
   function showDetail(field) {
@@ -446,7 +481,13 @@
   document.getElementById('route').addEventListener('change', function() { showDetail('route'); });
 
   // ---- 启动 ----
-  loadChannelTypes();
+  loadChannelTypes().then(function() {
+    // URL 模式回显：神策 URL 的 value= 参数包含上次选择
+    var val = params.get('value');
+    if (val && isUrlMode) {
+      setTimeout(function() { restoreValue(val); }, 300);
+    }
+  });
 </script>
 </body>
 </html>
