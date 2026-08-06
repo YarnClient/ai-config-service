@@ -134,8 +134,8 @@
     <button class="btn btn-primary" id="btnConfirm">确定</button>
   </div>
 
-  <!-- ====== Debug 面板 ====== -->
-  <div class="debug" id="debugPanel">
+  <!-- ====== Debug 面板（URL 加 ?debug=1 开启） ====== -->
+  <div class="debug" id="debugPanel" style="display:none">
     <div class="line"><span class="label">等待操作...</span></div>
   </div>
 </div>
@@ -162,9 +162,13 @@
   var manualMode = { scene: false, route: false };
   var currentChannel = '';
 
-  // ---- Debug 面板 ----
+  // ---- Debug 面板（URL 加 ?debug=1 开启） ----
+  var debugOn = params.get('debug') === '1';
+  if (debugOn) { document.getElementById('debugPanel').style.display = ''; }
+
   var debugLines = [];
   function dlog(label, msg, cls) {
+    if (!debugOn) return;  // 生产环境静默跳过
     var now = new Date().toLocaleTimeString();
     debugLines.push({ time: now, label: label, msg: String(msg), cls: cls || '' });
     if (debugLines.length > 20) debugLines.shift();
